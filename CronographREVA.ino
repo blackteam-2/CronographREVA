@@ -482,9 +482,13 @@ void programModeNormal()
 		while(getButton(BUTT3) == buttPressed)
 		{
 			i++;
-
+			
 			if (i >= buttonHoldTime)
 			{
+				BBWeight = BBWeightMax;
+				lcd.setCursor(11, 1);
+				lcd.print((float)BBWeight, 2);
+				lcd.print("g");
 				break;
 			}
 			delay(100);
@@ -517,6 +521,10 @@ void programModeNormal()
 
 			if (i >= buttonHoldTime)
 			{
+				BBWeight = BBWeightMin;
+				lcd.setCursor(11, 1);
+				lcd.print((float)BBWeight, 2);
+				lcd.print("g");
 				break;
 			}
 			delay(100);
@@ -734,7 +742,7 @@ void programModeAutotune()
 #pragma region Program_Setup_Mode
 void programModeSetup()
 {
-	
+	int buttonHoldTimeTemp = buttonHoldTime;
 	int tempMode = 0;
 	Buttlock = false;
 	Buttlock2 = false;
@@ -759,7 +767,7 @@ void programModeSetup()
 					lcd.setCursor(0, 0);
 					lcd.print("Butt Hold Time");
 					lcd.setCursor(0, 1);
-					lcd.print((float)buttonHoldTime/10, 1);
+					lcd.print((float)buttonHoldTimeTemp/10, 1);
 					lcd.print("Sec");
 					lock = false;
 				}
@@ -770,13 +778,13 @@ void programModeSetup()
 					int i = 0;
 					Buttlock3 = true;
 					
-					buttonHoldTime++;
-					if (buttonHoldTime > 100)
+					buttonHoldTimeTemp++;
+					if (buttonHoldTimeTemp > 100)
 					{
-						buttonHoldTime = 0;
+						buttonHoldTimeTemp = 100;
 					}
 					lcd.setCursor(0, 1);
-					lcd.print((float)buttonHoldTime/10, 1);
+					lcd.print((float)buttonHoldTimeTemp/10, 1);
 					lcd.print("Sec");
 					
 					while(getButton(BUTT3) == buttPressed)
@@ -786,6 +794,10 @@ void programModeSetup()
 
 						if (i >= buttonHoldTime)
 						{
+							buttonHoldTimeTemp = 100;
+							lcd.setCursor(0, 1);
+							lcd.print((float)buttonHoldTimeTemp/10, 1);
+							lcd.print("Sec");
 							break;
 						}
 						delay(100);
@@ -801,13 +813,13 @@ void programModeSetup()
 					int i = 0;
 					Buttlock2 = true;
 					
-					buttonHoldTime--;
-					if (buttonHoldTime < 1)
+					buttonHoldTimeTemp--;
+					if (buttonHoldTimeTemp < 1)
 					{
-						buttonHoldTime = 1;
+						buttonHoldTimeTemp = 1;
 					}
 					lcd.setCursor(0, 1);
-					lcd.print((float)buttonHoldTime/10, 1);
+					lcd.print((float)buttonHoldTimeTemp/10, 1);
 					lcd.print("Sec");
 					
 					while(getButton(BUTT2) == buttPressed)
@@ -817,6 +829,10 @@ void programModeSetup()
 
 						if (i >= buttonHoldTime)
 						{
+							buttonHoldTimeTemp = 1;
+							lcd.setCursor(0, 1);
+							lcd.print((float)buttonHoldTimeTemp/10, 1);
+							lcd.print("Sec");
 							break;
 						}
 						delay(100);
@@ -834,6 +850,7 @@ void programModeSetup()
 					while(getButton(BUTT1) == buttPressed)
 					{
 						i++;
+						buttonHoldTime = buttonHoldTimeTemp;
 						lock = true;
 						tempMode = 1;
 						if (i >= buttonHoldTime)
@@ -983,6 +1000,10 @@ void programModeSetup()
 
 						if (i >= buttonHoldTime)
 						{
+							BBWeight = BBWeightMax;
+							lcd.setCursor(0, 1);
+							lcd.print((float)BBWeight, 2);
+							lcd.print("g");
 							break;
 						}
 						delay(100);
@@ -1014,6 +1035,10 @@ void programModeSetup()
 
 						if (i >= buttonHoldTime)
 						{
+							BBWeight = BBWeightMin;
+							lcd.setCursor(0, 1);
+							lcd.print((float)BBWeight, 2);
+							lcd.print("g");
 							break;
 						}
 						delay(100);
@@ -1084,6 +1109,10 @@ void programModeSetup()
 
 					if (i >= buttonHoldTime)
 					{
+						AverageNumOfShots = 20;
+						lcd.setCursor(6, 1);
+						lcd.print(AverageNumOfShots);
+						lcd.print("    ");
 						break;
 					}
 					delay(100);
@@ -1115,6 +1144,10 @@ void programModeSetup()
 
 					if (i >= buttonHoldTime)
 					{
+						AverageNumOfShots = 2;
+						lcd.setCursor(6, 1);
+						lcd.print(AverageNumOfShots);
+						lcd.print("    ");
 						break;
 					}
 					delay(100);
@@ -1283,6 +1316,10 @@ void programModeSetup()
 
 						if (i >= buttonHoldTime)
 						{
+							BeamDelta = 1000;
+							lcd.setCursor(0, 1);
+							lcd.print(BeamDelta);
+							lcd.print("mV");
 							break;
 						}
 						delay(100);
@@ -1317,6 +1354,10 @@ void programModeSetup()
 
 						if (i >= buttonHoldTime)
 						{
+							BeamDelta = 200;
+							lcd.setCursor(0, 1);
+							lcd.print(BeamDelta);
+							lcd.print("mV");
 							break;
 						}
 						delay(100);
@@ -1390,6 +1431,10 @@ void programModeSetup()
 
 						if (i >= buttonHoldTime)
 						{
+							BeamASet = 4200;
+							lcd.setCursor(0, 1);
+							lcd.print(BeamASet);
+							lcd.print("mV");
 							break;
 						}
 						delay(100);
@@ -1424,6 +1469,10 @@ void programModeSetup()
 
 						if (i >= buttonHoldTime)
 						{
+							BeamASet = 500;
+							lcd.setCursor(0, 1);
+							lcd.print(BeamASet);
+							lcd.print("mV");
 							break;
 						}
 						delay(100);
