@@ -7,22 +7,23 @@ James McKenna
 Palmerston North Airsoft Club [PAC]
 
 
-===Software Version: V0.4===
+===Software Version: V0.5===
 
 V0.1 - 30/09/2015 - Initial Program
 V0.2 - 28/04/2016 - Test Version, Autotune and prototype limit test
 V0.3 - 03/05/2016 - Prog flow rewritten, Normal mode, Average mode, select mode, edit setup; Adjustment variables saved and loaded from EEPROM
 V0.4 - 06/05/2016 - Added in error handling + batt monitoring, Autotune check limits moved to allow automatic calibration, added manual autotune
+V0.5 - 19/07/2016 - Added in Feild crono function with adjustable limits 
 
-===Compatible PCB Revision: A ===
-- 
+===Compatible PCB Revision: REV A ===
+-
 
 
 ===NOTES:===
 
 ---TODO---
 -Add RPS function
--Add energy average function with adjustable pass/fail limit (for marshals)
+-Add energy average function with adjustable pass/fail limit (for marshals) ---DONE---(V0.5)
 
 
 ===Error Codes===
@@ -45,6 +46,7 @@ V0.4 - 06/05/2016 - Added in error handling + batt monitoring, Autotune check li
 #include <I2C.h>
 #include <MCP4651.h>
 #include "EEPROM/EEPROM.h"
+#include <math.h>
 
 
 
@@ -72,7 +74,8 @@ MCP4651 BEAM2POT(3);
 
 #define modeNormal 0
 #define modeAverage 1
-#define modeRPS 2
+#define modeFeild 2
+#define modeRPS 3
 #define modeSetup 5
 #define modeAutotune 6
 #define modeSelect 7
@@ -115,75 +118,75 @@ int batteryAlertArray[4] = {7000, 6800, 10500, 10200};//7.4 low, 7.4 empty, 11.1
 //=======================================LCD CUSTOM CHAR=================================
 //=======================================================================================
 
-byte BattChar1[8] = {
-	0b11111,
-	0b10000,
-	0b10111,
-	0b10111,
-	0b10111,
-	0b10000,
-	0b11111
-};
-
-byte BattChar2[8] = {
-	0b11111,
-	0b00000,
-	0b11111,
-	0b11111,
-	0b11111,
-	0b00000,
-	0b11111
-};
-
-byte BattChar3[8] = {
-	0b11110,
-	0b00010,
-	0b11011,
-	0b11011,
-	0b11011,
-	0b00010,
-	0b11110
-};
-
-byte BattChar4[8] = {
-	0b11111,
-	0b10000,
-	0b10000,
-	0b10000,
-	0b10000,
-	0b10000,
-	0b11111
-};
-
-byte BattChar5[8] = {
-	0b11111,
-	0b00000,
-	0b11000,
-	0b11000,
-	0b11000,
-	0b00000,
-	0b11111
-};
-
-byte BattChar6[8] = {
-	0b11111,
-	0b00000,
-	0b00000,
-	0b00000,
-	0b00000,
-	0b00000,
-	0b11111
-};
-
-byte BattChar7[8] = {
-	0b11110,
-	0b00010,
-	0b00011,
-	0b00011,
-	0b00011,
-	0b00010,
-	0b11110
-};
+//byte BattChar1[8] = {
+	//0b11111,
+	//0b10000,
+	//0b10111,
+	//0b10111,
+	//0b10111,
+	//0b10000,
+	//0b11111
+//};
+//
+//byte BattChar2[8] = {
+	//0b11111,
+	//0b00000,
+	//0b11111,
+	//0b11111,
+	//0b11111,
+	//0b00000,
+	//0b11111
+//};
+//
+//byte BattChar3[8] = {
+	//0b11110,
+	//0b00010,
+	//0b11011,
+	//0b11011,
+	//0b11011,
+	//0b00010,
+	//0b11110
+//};
+//
+//byte BattChar4[8] = {
+	//0b11111,
+	//0b10000,
+	//0b10000,
+	//0b10000,
+	//0b10000,
+	//0b10000,
+	//0b11111
+//};
+//
+//byte BattChar5[8] = {
+	//0b11111,
+	//0b00000,
+	//0b11000,
+	//0b11000,
+	//0b11000,
+	//0b00000,
+	//0b11111
+//};
+//
+//byte BattChar6[8] = {
+	//0b11111,
+	//0b00000,
+	//0b00000,
+	//0b00000,
+	//0b00000,
+	//0b00000,
+	//0b11111
+//};
+//
+//byte BattChar7[8] = {
+	//0b11110,
+	//0b00010,
+	//0b00011,
+	//0b00011,
+	//0b00011,
+	//0b00010,
+	//0b11110
+//};
 
 int LCDBattCharArray[5][3] = {{0,1,2},{0,1,6},{0,4,6},{0,5,6},{3,5,6}};
 
@@ -197,8 +200,8 @@ int prevProgramMode = 0;
 
 int buttonHoldTime = buttHoldTimeDefault;
 float BBWeight = BBWeightDefault;
-int lowVoltage = 0;
-int emptyVoltage = 0;
+int lowVoltage = batteryAlertArray[0];
+int emptyVoltage = batteryAlertArray[1];
 int BeamDelta = autoTuneDeltaDefault;
 int BeamASet = BeamGlobalSetDefault;
 int BeamBSet = BeamGlobalSetDefault;
@@ -206,6 +209,9 @@ int BeamCSet = BeamGlobalSetDefault;
 int BeamDSet = BeamGlobalSetDefault;
 boolean metric = false;
 uint8_t AverageNumOfShots = 5;
+float feildLimCQB = 1.14;
+float feildLimFeild = 1.64;
+float feildLimSniper = 3.34;
 
 int error = false;
 volatile boolean flag1 = false;
@@ -224,6 +230,8 @@ volatile unsigned int timerCount = 0;
 volatile unsigned int tempTimerCount = 0;
 float mpsAverage = 0;
 float mpsLastShot = 0;
+float statStandardDev = 0;
+float statRange = 0;
 
 volatile boolean timer2Flag = false;
 volatile boolean timer2Count = false;
@@ -232,7 +240,8 @@ boolean Buttlock = false;
 boolean Buttlock2 = false;
 boolean Buttlock3 = false;
 
-unsigned int shotCountArray[10] = {0};
+unsigned int shotTimeArray[10] = {0};
+float shotFpsArray[10] = {0};
 uint8_t shotCount = 0;
 uint8_t shotCountSelect = 0;
 boolean AverageSet = false;
@@ -254,6 +263,24 @@ void setup()
 	pinMode(SIGD, INPUT);
 	
 	Serial.begin(57600);//TESTING
+	
+	lcd.begin (16,2);
+	//lcd.createChar(0, BattChar1);
+	//lcd.createChar(1, BattChar2);
+	//lcd.createChar(2, BattChar3);
+	//lcd.createChar(3, BattChar4);
+	//lcd.createChar(4, BattChar5);
+	//lcd.createChar(5, BattChar6);
+	//lcd.createChar(6, BattChar7);
+	lcd.begin (16,2);
+	lcd.setBacklightPin(3,POSITIVE);
+	lcd.setBacklight(HIGH);
+	lcd.home();
+	lcd.print("CRONOGRAPH");
+	lcd.setCursor(0, 1);
+	lcd.print("J McKenna [PAC]");
+	delay(3000);
+	lcd.clear();
 	
 	dac.begin();  // initialize i2c interface
 	dac.vdd(5000);//Set external Ref V level in mV
@@ -278,36 +305,18 @@ void setup()
 	{
 		error = errorCode_I2CINITFail;
 	}
-	
-	//Check to see of I2C is functional 
+
+	//Check to see of I2C is functional
 	if (error >= errorCodeHardError)
 	{
 		hardError(error);
 	}
-	
+
 	//Set all Pots to be midrange (Approx 5K ohm)
 	BEAM1POT.setWiper(Wiper0, 0x80);
 	BEAM1POT.setWiper(Wiper1, 0x80);
 	BEAM2POT.setWiper(Wiper0, 0x80);
 	BEAM2POT.setWiper(Wiper1, 0x80);
-	
-	lcd.begin (16,2);
-	lcd.createChar(0, BattChar1);
-	lcd.createChar(1, BattChar2);
-	lcd.createChar(2, BattChar3);
-	lcd.createChar(3, BattChar4);
-	lcd.createChar(4, BattChar5);
-	lcd.createChar(5, BattChar6);
-	lcd.createChar(6, BattChar7);
-	lcd.begin (16,2);
-	lcd.setBacklightPin(3,POSITIVE);
-	lcd.setBacklight(HIGH);
-	lcd.home();
-	lcd.print("CRONOGRAPH");
-	lcd.setCursor(0, 1);
-	lcd.print("J McKenna [PAC]");
-	delay(3000);
-	lcd.clear();
 	
 	int tempint = 0;
 	
@@ -356,19 +365,8 @@ void setup()
 	lcd.print(autoTuneDeltaDefault);
 	delay(100);
 	//---------------------
-	
-	setupPCINT(1);
-	setupEXTINT(1);
-	setupCronoTimer(1);
-	setupTimer2(1);
-	
-	loadSettingsFromEEPROM();
-	
-	lcd.clear();
-	updateDisplay(programMode, true);
-	
-	resetAverage();
-	shotInProgress = false;
+
+	initalStartSetup();
 }
 
 
@@ -382,7 +380,7 @@ void loop()
 	if ((timer2Flag) && (!shotInProgress))
 	{
 		checkAllAutotuneLimits();
-	
+		
 		int tempError = checkBattLimits();
 		if ((error == errorCode_NoError) && (tempError != 0))
 		{
@@ -399,35 +397,42 @@ void loop()
 			error = tempError;
 			updateDisplay(programMode, true);
 		}
-			
+		
 		
 		timer2Flag = false;
 	}
 	
+	//Serial.print(programMode);
+	//delay(500);
+	
 	switch (programMode)
 	{
 		case modeNormal:
-			programModeNormal();
+		programModeNormal();
 		break;
 		
 		case modeAverage:
-			programModeAverage();
+		programModeAverage();
+		break;
+		
+		case modeFeild:
+		programModeFeild();
 		break;
 		
 		case modeRPS:
-			programModeRPS();
+		programModeRPS();
 		break;
 		
 		case modeAutotune:
-			programModeAutotune();
+		programModeAutotune();
 		break;
 		
 		case modeSetup:
-			programModeSetup();
+		programModeSetup();
 		break;
 		
 		case modeSelect:
-			programModeSelect();
+		programModeSelect();
 		break;
 	}
 	
@@ -566,12 +571,12 @@ void programModeAverage()
 		if (AverageSet)
 		{
 			shotCountSelect++;
-			if (shotCountSelect >= (AverageNumOfShots - 1))
+			if (shotCountSelect >= (AverageNumOfShots))
 			{
-				shotCountSelect = AverageNumOfShots - 1;
+				shotCountSelect = AverageNumOfShots;
 			}
 			updateDisplay(programMode, false);
-		} 
+		}
 		else
 		{
 			BBWeight += 0.01;
@@ -605,7 +610,7 @@ void programModeAverage()
 	{
 		int i = 0;
 		Buttlock2 = true;
-			
+		
 		if (AverageSet)
 		{
 			if (shotCountSelect != 0)
@@ -613,7 +618,7 @@ void programModeAverage()
 				shotCountSelect--;
 			}
 			updateDisplay(programMode, false);
-		} 
+		}
 		else
 		{
 			BBWeight -= 0.01;
@@ -673,11 +678,155 @@ void programModeAverage()
 			mpsLastShot = cronoDistance / ((float)timerCount * 0.0000005);
 			
 			//
-			shotCountArray[shotCount] = timerCount;
+			shotTimeArray[shotCount] = timerCount;
 			shotCount++;
+		}
+		
+		if (shotSuccess)//debugging
+		{
+			if (shotCount >= AverageNumOfShots)
+			{
+				calculateAverage();
+				shotCountSelect = shotCount; // - 1;
+				updateDisplay(programMode, false);
+				shotCount = 0;
+				AverageSet = true;
+			}
+			else
+			{
+				updateDisplay(programMode, shotSuccess);
+			}
+		}
+		shotFlag = false;
+	}
+	else if((shotFlag) && (AverageSet))
+	{
+		shotFlag = false;
+	}
+	
+}
+
+//
+void programModeFeild()
+{
+	//---Increment BBWeight / Shot Num---
+	if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+	{
+		int i = 0;
+		Buttlock3 = true;
+
+		if (AverageSet)
+		{
+			shotCountSelect++;
+			if (shotCountSelect >= (AverageNumOfShots - 1))
+			{
+				shotCountSelect = AverageNumOfShots - 1;
+			}
+			updateDisplay(programMode, false);
+		}
+		else
+		{
+			BBWeight += 0.01;
+			if (BBWeight >= BBWeightMax)
+			{
+				BBWeight = BBWeightMax;
+			}
+			lcd.setCursor(11, 1);
+			lcd.print((float)BBWeight, 2);
+			lcd.print("g");
+		}
+		
+		while(getButton(BUTT3) == buttPressed)
+		{
+			i++;
+
+			if (i >= buttonHoldTime)
+			{
+				break;
+			}
+			delay(100);
+		}
+	}
+	else if (getButton(BUTT3) == buttonReleased)
+	{
+		Buttlock3 = false;
+	}
+	
+	//---Decrement BB Weight / Shot Num---
+	if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
+	{
+		int i = 0;
+		Buttlock2 = true;
+		
+		if (AverageSet)
+		{
+			if (shotCountSelect != 0)
+			{
+				shotCountSelect--;
+			}
+			updateDisplay(programMode, false);
+		}
+		else
+		{
+			BBWeight -= 0.01;
+			if (BBWeight < BBWeightMin)
+			{
+				BBWeight = BBWeightMin;
+			}
+			lcd.setCursor(11, 1);
+			lcd.print((float)BBWeight, 2);
+			lcd.print("g");
+		}
+		
+		while(getButton(BUTT2) == buttPressed)
+		{
+			i++;
+
+			if (i >= buttonHoldTime)
+			{
+				break;
+			}
+			delay(100);
+		}
+	}
+	else if (getButton(BUTT2) == buttonReleased)
+	{
+		Buttlock2 = false;
+	}
+	//
+	if (getButton(BUTT1) == buttPressed)
+	{
+		int i = 0;
+		
+		resetAverage();
+		updateDisplay(programMode, true);
+		
+		while(getButton(BUTT1) == buttPressed)
+		{
+			i++;
 			
-			//do average stuff ===BROKEN AS FUCK ATM===
-			//mpsAverage = (mpsAverage + mpsLastShot) / 2.0;
+			if (i >= buttonHoldTime)
+			{
+				//Butt Held
+				prevProgramMode = programMode;
+				programMode = modeSelect;
+				break;
+			}
+			delay(100);
+		}
+	}
+	
+	//Check for flag to see if shot has been fired and picked up
+	if ((shotFlag) && (!AverageSet))
+	{
+		if (shotSuccess)
+		{
+			//Calc fps here
+			mpsLastShot = cronoDistance / ((float)timerCount * 0.0000005);
+			
+			//
+			shotTimeArray[shotCount] = timerCount;
+			shotCount++;
 		}
 		
 		if (shotSuccess)//debugging
@@ -701,8 +850,8 @@ void programModeAverage()
 	{
 		shotFlag = false;
 	}
-	
 }
+
 
 void programModeRPS()
 {
@@ -754,121 +903,121 @@ void programModeSetup()
 	
 	while(getButton(BUTT1) == buttPressed){}
 	
-	while(tempMode != 10)
+	while(tempMode != 100)
 	{
 		switch(tempMode)
 		{
-			//---BUTT HOLD TIME---
+			//============BUTT HOLD TIME================
 			case 0:
-				if (lock == true)
-				{
-					lcd.setCursor(0, 0);
-					lcd.print("                ");
-					lcd.setCursor(0, 0);
-					lcd.print("Butt Hold Time");
-					lcd.setCursor(0, 1);
-					lcd.print((float)buttonHoldTimeTemp/10, 1);
-					lcd.print("Sec");
-					lock = false;
-				}
+			if (lock == true)
+			{
+				lcd.setCursor(0, 0);
+				lcd.print("                ");
+				lcd.setCursor(0, 0);
+				lcd.print("Butt Hold Time");
+				lcd.setCursor(0, 1);
+				lcd.print((float)buttonHoldTimeTemp/10, 1);
+				lcd.print("Sec");
+				lock = false;
+			}
 			
-				//
-				if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+			//
+			if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+			{
+				int i = 0;
+				Buttlock3 = true;
+				
+				buttonHoldTimeTemp++;
+				if (buttonHoldTimeTemp > 100)
 				{
-					int i = 0;
-					Buttlock3 = true;
-					
-					buttonHoldTimeTemp++;
-					if (buttonHoldTimeTemp > 100)
+					buttonHoldTimeTemp = 100;
+				}
+				lcd.setCursor(0, 1);
+				lcd.print((float)buttonHoldTimeTemp/10, 1);
+				lcd.print("Sec");
+				
+				while(getButton(BUTT3) == buttPressed)
+				{
+					i++;
+					lock = true;
+
+					if (i >= buttonHoldTime)
 					{
 						buttonHoldTimeTemp = 100;
+						lcd.setCursor(0, 1);
+						lcd.print((float)buttonHoldTimeTemp/10, 1);
+						lcd.print("Sec");
+						break;
 					}
-					lcd.setCursor(0, 1);
-					lcd.print((float)buttonHoldTimeTemp/10, 1);
-					lcd.print("Sec");
-					
-					while(getButton(BUTT3) == buttPressed)
-					{
-						i++;
-						lock = true;
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT3) == buttonReleased)
+			{
+				Buttlock3 = false;
+			}
+			//
+			if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
+			{
+				int i = 0;
+				Buttlock2 = true;
+				
+				buttonHoldTimeTemp--;
+				if (buttonHoldTimeTemp < 1)
+				{
+					buttonHoldTimeTemp = 1;
+				}
+				lcd.setCursor(0, 1);
+				lcd.print((float)buttonHoldTimeTemp/10, 1);
+				lcd.print("Sec");
+				
+				while(getButton(BUTT2) == buttPressed)
+				{
+					i++;
+					lock = true;
 
-						if (i >= buttonHoldTime)
-						{
-							buttonHoldTimeTemp = 100;
-							lcd.setCursor(0, 1);
-							lcd.print((float)buttonHoldTimeTemp/10, 1);
-							lcd.print("Sec");
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT3) == buttonReleased)
-				{
-					Buttlock3 = false;
-				}
-				//
-				if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
-				{
-					int i = 0;
-					Buttlock2 = true;
-					
-					buttonHoldTimeTemp--;
-					if (buttonHoldTimeTemp < 1)
+					if (i >= buttonHoldTime)
 					{
 						buttonHoldTimeTemp = 1;
+						lcd.setCursor(0, 1);
+						lcd.print((float)buttonHoldTimeTemp/10, 1);
+						lcd.print("Sec");
+						break;
 					}
-					lcd.setCursor(0, 1);
-					lcd.print((float)buttonHoldTimeTemp/10, 1);
-					lcd.print("Sec");
-					
-					while(getButton(BUTT2) == buttPressed)
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT2) == buttonReleased)
+			{
+				Buttlock2 = false;
+			}
+			//
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
+				{
+					i++;
+					buttonHoldTime = buttonHoldTimeTemp;
+					lock = true;
+					tempMode = 1;
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						lock = true;
-
-						if (i >= buttonHoldTime)
-						{
-							buttonHoldTimeTemp = 1;
-							lcd.setCursor(0, 1);
-							lcd.print((float)buttonHoldTimeTemp/10, 1);
-							lcd.print("Sec");
-							break;
-						}
-						delay(100);
+						programMode = prevProgramMode;
+						tempMode = 100;
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT2) == buttonReleased)
-				{
-					Buttlock2 = false;
-				}
-				//
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
-				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
-					{
-						i++;
-						buttonHoldTime = buttonHoldTimeTemp;
-						lock = true;
-						tempMode = 1;
-						if (i >= buttonHoldTime)
-						{
-							programMode = prevProgramMode;
-							tempMode = 10;
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT1) == buttonReleased)
-				{
-					Buttlock = false;
-				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 			
-			//-----Metric/Imperial Units-----
+			//===========Metric/Imperial Units============
 			case 1:
 			if (lock == true)
 			{
@@ -878,10 +1027,10 @@ void programModeSetup()
 				lcd.print("Units");
 				lcd.setCursor(0, 1);
 				if (metric)
-					lcd.print("Metric [MPS]");
+				lcd.print("Metric [MPS]");
 				else
-					lcd.print("Imperial [FPS]");
-					
+				lcd.print("Imperial [FPS]");
+				
 				lock = false;
 			}
 			
@@ -952,7 +1101,7 @@ void programModeSetup()
 					if (i >= buttonHoldTime)
 					{
 						programMode = prevProgramMode;
-						tempMode = 10;
+						tempMode = 100;
 						break;
 					}
 					delay(100);
@@ -964,116 +1113,116 @@ void programModeSetup()
 			}
 			break;
 			
-			//=====BB WEIGHT=====
+			//==========BB WEIGHT============
 			case 2:
-				if (lock == true)
-				{
-					lcd.setCursor(0, 0);
-					lcd.print("                ");
-					lcd.setCursor(0, 0);
-					lcd.print("BB Weight");
-					lcd.setCursor(0, 1);
-					lcd.print(BBWeight, 2);
-					lcd.print("g               ");
-					lock = false;
-				}
+			if (lock == true)
+			{
+				lcd.setCursor(0, 0);
+				lcd.print("                ");
+				lcd.setCursor(0, 0);
+				lcd.print("BB Weight");
+				lcd.setCursor(0, 1);
+				lcd.print(BBWeight, 2);
+				lcd.print("g               ");
+				lock = false;
+			}
+			
+			//---Increment---
+			if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+			{
+				int i = 0;
+				Buttlock3 = true;
 				
-				//---Increment---
-				if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+				BBWeight += 0.01;
+				if (BBWeight >= BBWeightMax)
 				{
-					int i = 0;
-					Buttlock3 = true;
-					
-					BBWeight += 0.01;
-					if (BBWeight >= BBWeightMax)
+					BBWeight = BBWeightMax;
+				}
+				lcd.setCursor(0, 1);
+				lcd.print((float)BBWeight, 2);
+				lcd.print("g");
+				
+				while(getButton(BUTT3) == buttPressed)
+				{
+					i++;
+					//lock = true;
+
+					if (i >= buttonHoldTime)
 					{
 						BBWeight = BBWeightMax;
+						lcd.setCursor(0, 1);
+						lcd.print((float)BBWeight, 2);
+						lcd.print("g");
+						break;
 					}
-					lcd.setCursor(0, 1);
-					lcd.print((float)BBWeight, 2);
-					lcd.print("g");
-					
-					while(getButton(BUTT3) == buttPressed)
-					{
-						i++;
-						//lock = true;
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT3) == buttonReleased)
+			{
+				Buttlock3 = false;
+			}
+			//---Decrement---
+			if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
+			{
+				int i = 0;
+				Buttlock2 = true;
+				
+				BBWeight -= 0.01;
+				if (BBWeight < BBWeightMin)
+				{
+					BBWeight = BBWeightMin;
+				}
+				lcd.setCursor(0, 1);
+				lcd.print((float)BBWeight, 2);
+				lcd.print("g");
+				
+				while(getButton(BUTT2) == buttPressed)
+				{
+					i++;
+					//lock = true;
 
-						if (i >= buttonHoldTime)
-						{
-							BBWeight = BBWeightMax;
-							lcd.setCursor(0, 1);
-							lcd.print((float)BBWeight, 2);
-							lcd.print("g");
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT3) == buttonReleased)
-				{
-					Buttlock3 = false;
-				}
-				//---Decrement---
-				if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
-				{
-					int i = 0;
-					Buttlock2 = true;
-					
-					BBWeight -= 0.01;
-					if (BBWeight < BBWeightMin)
+					if (i >= buttonHoldTime)
 					{
 						BBWeight = BBWeightMin;
+						lcd.setCursor(0, 1);
+						lcd.print((float)BBWeight, 2);
+						lcd.print("g");
+						break;
 					}
-					lcd.setCursor(0, 1);
-					lcd.print((float)BBWeight, 2);
-					lcd.print("g");
-					
-					while(getButton(BUTT2) == buttPressed)
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT2) == buttonReleased)
+			{
+				Buttlock2 = false;
+			}
+			//---Confirm/Switch mode---
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
+				{
+					i++;
+					lock = true;
+					tempMode = 3;
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						//lock = true;
-
-						if (i >= buttonHoldTime)
-						{
-							BBWeight = BBWeightMin;
-							lcd.setCursor(0, 1);
-							lcd.print((float)BBWeight, 2);
-							lcd.print("g");
-							break;
-						}
-						delay(100);
+						programMode = prevProgramMode;
+						tempMode = 100;
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT2) == buttonReleased)
-				{
-					Buttlock2 = false;
-				}
-				//---Confirm/Switch mode---
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
-				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
-					{
-						i++;
-						lock = true;
-						tempMode = 3;
-						if (i >= buttonHoldTime)
-						{
-							programMode = prevProgramMode;
-							tempMode = 10;
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT1) == buttonReleased)
-				{
-					Buttlock = false;
-				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 			
-			//=====Num Of AVG=====
+			//============Num Of AVG============
 			case 3:
 			if (lock == true)
 			{
@@ -1170,7 +1319,430 @@ void programModeSetup()
 					if (i >= buttonHoldTime)
 					{
 						programMode = prevProgramMode;
-						tempMode = 10;
+						tempMode = 100;
+						break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
+			break;
+			
+			//==========FEILD LIMIT CQB============
+			case 4:
+			if (lock == true)
+			{
+				lcd.setCursor(0, 0);
+				lcd.print("                ");
+				lcd.setCursor(0, 0);
+				lcd.print("Field Lim:CQB");
+				lcd.setCursor(0, 1);
+				lcd.print("E:");
+				lcd.print(feildLimCQB, 2);
+				lcd.print("J");
+				lcd.setCursor(9, 1);
+				float tempFloat = sqrt((2 * feildLimCQB)/ (0.20 / 1000));
+				if (metric)
+				{
+					lcd.print(tempFloat, 0);
+				}
+				else
+				{
+					lcd.print(convertToFPS(tempFloat), 0);
+				}
+				lcd.print("@.2g");
+				lock = false;
+			}
+			
+			//---Increment---
+			if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+			{
+				int i = 0;
+				Buttlock3 = true;
+				
+				feildLimCQB += 0.01;
+				//if (feildLimCQB >= BBWeightMax)
+				//{
+					//feildLimCQB = BBWeightMax;
+				//}
+				lcd.setCursor(2, 1);
+				lcd.print((float)feildLimCQB, 2);
+				lcd.print("J");
+				lcd.setCursor(9, 1);
+				float tempFloat = sqrt((2 * feildLimCQB)/ (0.20 / 1000));
+				if (metric)
+				{
+					lcd.print(tempFloat, 0);
+				}
+				else
+				{
+					lcd.print(convertToFPS(tempFloat), 0);
+				}
+				
+				while(getButton(BUTT3) == buttPressed)
+				{
+					i++;
+					//lock = true;
+
+					if (i >= buttonHoldTime)
+					{
+						//BBWeight = BBWeightMax;
+						//lcd.setCursor(0, 1);
+						//lcd.print((float)BBWeight, 2);
+						//lcd.print("g");
+						break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT3) == buttonReleased)
+			{
+				Buttlock3 = false;
+			}
+			//---Decrement---
+			if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
+			{
+				int i = 0;
+				Buttlock2 = true;
+				
+				feildLimCQB -= 0.01;
+				if (feildLimCQB <= 0)
+				{
+					feildLimCQB = 0.1;
+				}
+				lcd.setCursor(2, 1);
+				lcd.print((float)feildLimCQB, 2);
+				lcd.print("J");
+				lcd.setCursor(9, 1);
+				float tempFloat = sqrt((2 * feildLimCQB)/ (0.20 / 1000));
+				if (metric)
+				{
+					lcd.print(tempFloat, 0);
+				}
+				else
+				{
+					lcd.print(convertToFPS(tempFloat), 0);
+				}
+				
+				while(getButton(BUTT2) == buttPressed)
+				{
+					i++;
+					//lock = true;
+
+					if (i >= buttonHoldTime)
+					{
+						//BBWeight = BBWeightMin;
+						//lcd.setCursor(0, 1);
+						//lcd.print((float)BBWeight, 2);
+						//lcd.print("g");
+						break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT2) == buttonReleased)
+			{
+				Buttlock2 = false;
+			}
+			//---Confirm/Switch mode---
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
+				{
+					i++;
+					lock = true;
+					tempMode = 5;
+					if (i >= buttonHoldTime)
+					{
+						programMode = prevProgramMode;
+						tempMode = 100;
+						break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
+			break;
+			
+			//==========FEILD LIMIT FEILD============
+			case 5:
+			if (lock == true)
+			{
+				lcd.setCursor(0, 0);
+				lcd.print("                ");
+				lcd.setCursor(0, 0);
+				lcd.print("Field Lim:FIELD");
+				lcd.setCursor(0, 1);
+				lcd.print("E:");
+				lcd.print(feildLimFeild, 2);
+				lcd.print("J");
+				lcd.setCursor(9, 1);
+				float tempFloat = sqrt((2 * feildLimFeild)/ (0.20 / 1000));
+				if (metric)
+				{
+					lcd.print(tempFloat, 0);
+				}
+				else
+				{
+					lcd.print(convertToFPS(tempFloat), 0);
+				}
+				lcd.print("@.2g");
+				lock = false;
+			}
+			
+			//---Increment---
+			if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+			{
+				int i = 0;
+				Buttlock3 = true;
+				
+				feildLimFeild += 0.01;
+				//if (feildLimCQB >= BBWeightMax)
+				//{
+					//feildLimCQB = BBWeightMax;
+				//}
+				lcd.setCursor(2, 1);
+				lcd.print((float)feildLimFeild, 2);
+				lcd.print("J");
+				lcd.setCursor(9, 1);
+				float tempFloat = sqrt((2 * feildLimFeild)/ (0.20 / 1000));
+				if (metric)
+				{
+					lcd.print(tempFloat, 0);
+				}
+				else
+				{
+					lcd.print(convertToFPS(tempFloat), 0);
+				}
+				
+				while(getButton(BUTT3) == buttPressed)
+				{
+					i++;
+					lock = true;
+
+					if (i >= buttonHoldTime)
+					{
+						//BBWeight = BBWeightMax;
+						//lcd.setCursor(0, 1);
+						//lcd.print((float)BBWeight, 2);
+						//lcd.print("g");
+						//break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT3) == buttonReleased)
+			{
+				Buttlock3 = false;
+			}
+			//---Decrement---
+			if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
+			{
+				int i = 0;
+				Buttlock2 = true;
+				
+				feildLimFeild -= 0.01;
+				if (feildLimFeild <= (feildLimCQB + 0.1))
+				{
+					feildLimFeild = 0.1;
+				}
+				lcd.setCursor(2, 1);
+				lcd.print((float)feildLimFeild, 2);
+				lcd.print("J");
+				lcd.setCursor(9, 1);
+				float tempFloat = sqrt((2 * feildLimFeild)/ (0.20 / 1000));
+				if (metric)
+				{
+					lcd.print(tempFloat, 0);
+				}
+				else
+				{
+					lcd.print(convertToFPS(tempFloat), 0);
+				}
+				
+				while(getButton(BUTT2) == buttPressed)
+				{
+					i++;
+					//lock = true;
+
+					if (i >= buttonHoldTime)
+					{
+						//BBWeight = BBWeightMin;
+						//lcd.setCursor(0, 1);
+						//lcd.print((float)BBWeight, 2);
+						//lcd.print("g");
+						break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT2) == buttonReleased)
+			{
+				Buttlock2 = false;
+			}
+			//---Confirm/Switch mode---
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
+				{
+					i++;
+					lock = true;
+					tempMode = 6;
+					if (i >= buttonHoldTime)
+					{
+						programMode = prevProgramMode;
+						tempMode = 100;
+						break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
+			break;
+			
+			//==========FEILD LIMIT SNIPER============
+			case 6:
+			if (lock == true)
+			{
+				lcd.setCursor(0, 0);
+				lcd.print("                ");
+				lcd.setCursor(0, 0);
+				lcd.print("Field Lim:SNIPER");
+				lcd.setCursor(0, 1);
+				lcd.print("E:");
+				lcd.print(feildLimSniper, 2);
+				lcd.print("J");
+				lcd.setCursor(9, 1);
+				float tempFloat = sqrt((2 * feildLimSniper)/ (0.20 / 1000));
+				if (metric)
+				{
+					lcd.print(tempFloat, 0);
+				}
+				else
+				{
+					lcd.print(convertToFPS(tempFloat), 0);
+				}
+				lcd.print("@.2g");
+				lock = false;
+			}
+			
+			//---Increment---
+			if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+			{
+				int i = 0;
+				Buttlock3 = true;
+				
+				feildLimSniper += 0.01;
+				//if (feildLimCQB >= BBWeightMax)
+				//{
+					//feildLimCQB = BBWeightMax;
+				//}
+				lcd.setCursor(2, 1);
+				lcd.print((float)feildLimSniper, 2);
+				lcd.print("J");
+				lcd.setCursor(9, 1);
+				float tempFloat = sqrt((2 * feildLimSniper)/ (0.20 / 1000));
+				if (metric)
+				{
+					lcd.print(tempFloat, 0);
+				}
+				else
+				{
+					lcd.print(convertToFPS(tempFloat), 0);
+				}
+				
+				while(getButton(BUTT3) == buttPressed)
+				{
+					i++;
+					//lock = true;
+
+					if (i >= buttonHoldTime)
+					{
+						//BBWeight = BBWeightMax;
+						//lcd.setCursor(0, 1);
+						//lcd.print((float)BBWeight, 2);
+						//lcd.print("g");
+						//break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT3) == buttonReleased)
+			{
+				Buttlock3 = false;
+			}
+			//---Decrement---
+			if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
+			{
+				int i = 0;
+				Buttlock2 = true;
+				
+				feildLimSniper -= 0.01;
+				if (feildLimSniper <= (feildLimFeild + 0.1))
+				{
+					feildLimSniper = 0.1;
+				}
+				lcd.setCursor(2, 1);
+				lcd.print((float)feildLimSniper, 2);
+				lcd.print("J");
+				lcd.setCursor(9, 1);
+				float tempFloat = sqrt((2 * feildLimSniper)/ (0.20 / 1000));
+				if (metric)
+				{
+					lcd.print(tempFloat, 0);
+				}
+				else
+				{
+					lcd.print(convertToFPS(tempFloat), 0);
+				}
+				
+				while(getButton(BUTT2) == buttPressed)
+				{
+					i++;
+					//lock = true;
+
+					if (i >= buttonHoldTime)
+					{
+						//BBWeight = BBWeightMin;
+						//lcd.setCursor(0, 1);
+						//lcd.print((float)BBWeight, 2);
+						//lcd.print("g");
+						break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT2) == buttonReleased)
+			{
+				Buttlock2 = false;
+			}
+			//---Confirm/Switch mode---
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
+				{
+					i++;
+					lock = true;
+					tempMode = 7;
+					if (i >= buttonHoldTime)
+					{
+						programMode = prevProgramMode;
+						tempMode = 100;
 						break;
 					}
 					delay(100);
@@ -1183,332 +1755,332 @@ void programModeSetup()
 			break;
 			
 			//=====LIPO V SET===== //used for low V alert
-			case 4:
-				if (lock == true)
-				{
-					lcd.setCursor(0, 0);
-					lcd.print("                ");
-					lcd.setCursor(0, 0);
-					lcd.print("Lipo V Set");
-					lcd.setCursor(0, 1);
-					if (lowVoltage == batteryAlertArray[0])
-						lcd.print("7.4V Lipo       ");
-					else
-						lcd.print("11.1V Lipo      ");
-						
-					lock = false;
-				}
+			case 7:
+			if (lock == true)
+			{
+				lcd.setCursor(0, 0);
+				lcd.print("                ");
+				lcd.setCursor(0, 0);
+				lcd.print("Lipo V Set");
+				lcd.setCursor(0, 1);
+				if (lowVoltage == batteryAlertArray[0])
+				lcd.print("7.4V Lipo       ");
+				else
+				lcd.print("11.1V Lipo      ");
 				
-				//---7.4V---
-				if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+				lock = false;
+			}
+			
+			//---7.4V---
+			if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+			{
+				int i = 0;
+				Buttlock3 = true;
+				
+				lowVoltage = batteryAlertArray[0];
+				emptyVoltage = batteryAlertArray[1];
+				
+				lcd.setCursor(0, 1);
+				lcd.print("7.4V Lipo       ");
+				
+				while(getButton(BUTT3) == buttPressed)
 				{
-					int i = 0;
-					Buttlock3 = true;
-					
-					lowVoltage = batteryAlertArray[0];
-					emptyVoltage = batteryAlertArray[1];
-					
-					lcd.setCursor(0, 1);
-					lcd.print("7.4V Lipo       ");
-					
-					while(getButton(BUTT3) == buttPressed)
-					{
-						i++;
-						//lock = true;
+					i++;
+					//lock = true;
 
-						if (i >= buttonHoldTime)
-						{
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT3) == buttonReleased)
-				{
-					Buttlock3 = false;
-				}
-				//---11.1V---
-				if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
-				{
-					int i = 0;
-					Buttlock2 = true;
-					
-					lowVoltage = batteryAlertArray[2];
-					emptyVoltage = batteryAlertArray[3];
-					
-					lcd.setCursor(0, 1);
-					lcd.print("11.1V Lipo      ");
-					
-					while(getButton(BUTT2) == buttPressed)
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						//lock = true;
+						break;
+					}
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT3) == buttonReleased)
+			{
+				Buttlock3 = false;
+			}
+			//---11.1V---
+			if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
+			{
+				int i = 0;
+				Buttlock2 = true;
+				
+				lowVoltage = batteryAlertArray[2];
+				emptyVoltage = batteryAlertArray[3];
+				
+				lcd.setCursor(0, 1);
+				lcd.print("11.1V Lipo      ");
+				
+				while(getButton(BUTT2) == buttPressed)
+				{
+					i++;
+					//lock = true;
 
-						if (i >= buttonHoldTime)
-						{
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT2) == buttonReleased)
-				{
-					Buttlock2 = false;
-				}
-				//---Confirm/Switch mode---
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
-				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						lock = true;
-						tempMode = 5;
-						if (i >= buttonHoldTime)
-						{
-							programMode = prevProgramMode;
-							tempMode = 10;
-							break;
-						}
-						delay(100);
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT1) == buttonReleased)
+			}
+			else if (getButton(BUTT2) == buttonReleased)
+			{
+				Buttlock2 = false;
+			}
+			//---Confirm/Switch mode---
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
 				{
-					Buttlock = false;
+					i++;
+					lock = true;
+					tempMode = 8;
+					if (i >= buttonHoldTime)
+					{
+						programMode = prevProgramMode;
+						tempMode = 100;
+						break;
+					}
+					delay(100);
 				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 			
-			//=====BEAM DELTA SET=====-------------------------------------
-			case 5:
-				if (lock == true)
-				{
-					lcd.setCursor(0, 0);
-					lcd.print("                ");
-					lcd.setCursor(0, 0);
-					lcd.print("Beam Delta");
-					lcd.setCursor(0, 1);
-					lcd.print(BeamDelta);
-					lcd.print("mV          ");
-					lock = false;
-				}
+			//==========BEAM DELTA SET===========-------------------------------------
+			case 8:
+			if (lock == true)
+			{
+				lcd.setCursor(0, 0);
+				lcd.print("                ");
+				lcd.setCursor(0, 0);
+				lcd.print("Beam Delta");
+				lcd.setCursor(0, 1);
+				lcd.print(BeamDelta);
+				lcd.print("mV          ");
+				lock = false;
+			}
+			
+			//---Increment---
+			if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+			{
+				int i = 0;
+				Buttlock3 = true;
 				
-				//---Increment---
-				if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+				BeamDelta += 10;
+				if (BeamDelta >= 1000)
 				{
-					int i = 0;
-					Buttlock3 = true;
-					
-					BeamDelta += 10;
-					if (BeamDelta >= 1000)
+					BeamDelta = 1000;
+				}
+				lcd.setCursor(0, 1);
+				lcd.print(BeamDelta);
+				lcd.print("mV");
+				
+				while(getButton(BUTT3) == buttPressed)
+				{
+					i++;
+					//lock = true;
+
+					if (i >= buttonHoldTime)
 					{
 						BeamDelta = 1000;
+						lcd.setCursor(0, 1);
+						lcd.print(BeamDelta);
+						lcd.print("mV");
+						break;
 					}
-					lcd.setCursor(0, 1);
-					lcd.print(BeamDelta);
-					lcd.print("mV");
-					
-					while(getButton(BUTT3) == buttPressed)
-					{
-						i++;
-						//lock = true;
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT3) == buttonReleased)
+			{
+				Buttlock3 = false;
+			}
+			//---Decrement---
+			if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
+			{
+				int i = 0;
+				Buttlock2 = true;
+				
+				BeamDelta -= 10;
+				BeamBSet = BeamASet;
+				BeamCSet = BeamASet;
+				BeamDSet = BeamASet;
+				if (BeamDelta < 200)
+				{
+					BeamDelta = 200;
+				}
+				lcd.setCursor(0, 1);
+				lcd.print(BeamDelta);
+				lcd.print("mV");
+				
+				while(getButton(BUTT2) == buttPressed)
+				{
+					i++;
+					//lock = true;
 
-						if (i >= buttonHoldTime)
-						{
-							BeamDelta = 1000;
-							lcd.setCursor(0, 1);
-							lcd.print(BeamDelta);
-							lcd.print("mV");
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT3) == buttonReleased)
-				{
-					Buttlock3 = false;
-				}
-				//---Decrement---
-				if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
-				{
-					int i = 0;
-					Buttlock2 = true;
-					
-					BeamDelta -= 10;
-					BeamBSet = BeamASet;
-					BeamCSet = BeamASet;
-					BeamDSet = BeamASet;
-					if (BeamDelta < 200)
+					if (i >= buttonHoldTime)
 					{
 						BeamDelta = 200;
+						lcd.setCursor(0, 1);
+						lcd.print(BeamDelta);
+						lcd.print("mV");
+						break;
 					}
-					lcd.setCursor(0, 1);
-					lcd.print(BeamDelta);
-					lcd.print("mV");
-					
-					while(getButton(BUTT2) == buttPressed)
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT2) == buttonReleased)
+			{
+				Buttlock2 = false;
+			}
+			//---Confirm/Switch mode---
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
+				{
+					i++;
+					lock = true;
+					tempMode = 9;
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						//lock = true;
-
-						if (i >= buttonHoldTime)
-						{
-							BeamDelta = 200;
-							lcd.setCursor(0, 1);
-							lcd.print(BeamDelta);
-							lcd.print("mV");
-							break;
-						}
-						delay(100);
+						programMode = prevProgramMode;
+						tempMode = 100;
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT2) == buttonReleased)
-				{
-					Buttlock2 = false;
-				}
-				//---Confirm/Switch mode---
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
-				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
-					{
-						i++;
-						lock = true;
-						tempMode = 6;
-						if (i >= buttonHoldTime)
-						{
-							programMode = prevProgramMode;
-							tempMode = 10;
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT1) == buttonReleased)
-				{
-					Buttlock = false;
-				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 			
-			//=====BEAM TARGET SET=====
-			case 6:
-				if (lock == true)
-				{
-					lcd.setCursor(0, 0);
-					lcd.print("                ");
-					lcd.setCursor(0, 0);
-					lcd.print("Beam set point");
-					lcd.setCursor(0, 1);
-					lcd.print(BeamASet);
-					lcd.print("mV       ");
-					lock = false;
-				}
+			//============BEAM TARGET SET=============
+			case 9:
+			if (lock == true)
+			{
+				lcd.setCursor(0, 0);
+				lcd.print("                ");
+				lcd.setCursor(0, 0);
+				lcd.print("Beam set point");
+				lcd.setCursor(0, 1);
+				lcd.print(BeamASet);
+				lcd.print("mV       ");
+				lock = false;
+			}
+			
+			//---Increment---
+			if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+			{
+				int i = 0;
+				Buttlock3 = true;
 				
-				//---Increment---
-				if ((getButton(BUTT3) == buttPressed) && (Buttlock3 == false))
+				BeamASet += 10;
+				BeamBSet = BeamASet;
+				BeamCSet = BeamASet;
+				BeamDSet = BeamASet;
+				if (BeamASet >= 4200)
 				{
-					int i = 0;
-					Buttlock3 = true;
-					
-					BeamASet += 10;
-					BeamBSet = BeamASet;
-					BeamCSet = BeamASet;
-					BeamDSet = BeamASet;
-					if (BeamASet >= 4200)
+					BeamASet = 4200;
+				}
+				lcd.setCursor(0, 1);
+				lcd.print(BeamASet);
+				lcd.print("mV");
+				
+				while(getButton(BUTT3) == buttPressed)
+				{
+					i++;
+					//lock = true;
+
+					if (i >= buttonHoldTime)
 					{
 						BeamASet = 4200;
+						lcd.setCursor(0, 1);
+						lcd.print(BeamASet);
+						lcd.print("mV");
+						break;
 					}
-					lcd.setCursor(0, 1);
-					lcd.print(BeamASet);
-					lcd.print("mV");
-					
-					while(getButton(BUTT3) == buttPressed)
-					{
-						i++;
-						//lock = true;
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT3) == buttonReleased)
+			{
+				Buttlock3 = false;
+			}
+			//---Decrement---
+			if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
+			{
+				int i = 0;
+				Buttlock2 = true;
+				
+				BeamASet -= 10;
+				BeamBSet = BeamASet;
+				BeamCSet = BeamASet;
+				BeamDSet = BeamASet;
+				if (BeamASet < 500)
+				{
+					BeamASet = 500;
+				}
+				lcd.setCursor(0, 1);
+				lcd.print(BeamASet);
+				lcd.print("mV");
+				
+				while(getButton(BUTT2) == buttPressed)
+				{
+					i++;
+					//lock = true;
 
-						if (i >= buttonHoldTime)
-						{
-							BeamASet = 4200;
-							lcd.setCursor(0, 1);
-							lcd.print(BeamASet);
-							lcd.print("mV");
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT3) == buttonReleased)
-				{
-					Buttlock3 = false;
-				}
-				//---Decrement---
-				if ((getButton(BUTT2) == buttPressed) && (Buttlock2 == false))
-				{
-					int i = 0;
-					Buttlock2 = true;
-					
-					BeamASet -= 10;
-					BeamBSet = BeamASet;
-					BeamCSet = BeamASet;
-					BeamDSet = BeamASet;
-					if (BeamASet < 500)
+					if (i >= buttonHoldTime)
 					{
 						BeamASet = 500;
+						lcd.setCursor(0, 1);
+						lcd.print(BeamASet);
+						lcd.print("mV");
+						break;
 					}
-					lcd.setCursor(0, 1);
-					lcd.print(BeamASet);
-					lcd.print("mV");
-					
-					while(getButton(BUTT2) == buttPressed)
+					delay(100);
+				}
+			}
+			else if (getButton(BUTT2) == buttonReleased)
+			{
+				Buttlock2 = false;
+			}
+			//---Confirm/Switch mode---
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
+				{
+					i++;
+					lock = true;
+					tempMode = 10;
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						//lock = true;
-
-						if (i >= buttonHoldTime)
-						{
-							BeamASet = 500;
-							lcd.setCursor(0, 1);
-							lcd.print(BeamASet);
-							lcd.print("mV");
-							break;
-						}
-						delay(100);
+						programMode = prevProgramMode;
+						tempMode = 100;
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT2) == buttonReleased)
-				{
-					Buttlock2 = false;
-				}
-				//---Confirm/Switch mode---
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
-				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
-					{
-						i++;
-						lock = true;
-						tempMode = 7;
-						if (i >= buttonHoldTime)
-						{
-							programMode = prevProgramMode;
-							tempMode = 10;
-							break;
-						}
-						delay(100);
-					}
-				}
-				else if (getButton(BUTT1) == buttonReleased)
-				{
-					Buttlock = false;
-				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 			
-			//=====Error Code=====
-			case 7:
+			//==============Error Code==============//This mode is usefull for testing / debugging
+			case 10:
 			if (lock == true)
 			{
 				lcd.setCursor(0, 0);
@@ -1542,7 +2114,7 @@ void programModeSetup()
 					if (i >= buttonHoldTime)
 					{
 						programMode = prevProgramMode;
-						tempMode = 10;
+						tempMode = 100;
 						break;
 					}
 					delay(100);
@@ -1593,7 +2165,7 @@ void programModeSelect()
 			Buttlock3 = true;
 
 			tempMode++;
-			if (tempMode > 4)
+			if (tempMode > 5)
 			{
 				tempMode = 0;
 			}
@@ -1624,7 +2196,7 @@ void programModeSelect()
 			tempMode--;
 			if (tempMode < 0)
 			{
-				tempMode = 4;
+				tempMode = 5;
 			}
 			lock = true;
 
@@ -1648,227 +2220,273 @@ void programModeSelect()
 		switch(tempMode)
 		{
 			case 0:
-				if (lock == true)
-				{
-					lcd.setCursor(9, 0);
-					lcd.print("       ");
-					lcd.setCursor(9, 0);
-					lcd.print("Normal");
-					lock = false;
-				}
-				
-				if (timer2Flag)
-				{
-					lcd.setCursor(7, 1);
-					lcd.print("       ");
-					lcd.setCursor(7, 1);
-					lcd.print(getBattVoltage(), 2);
-					lcd.print("V");
-					timer2Flag = false;
-				}
+			if (lock == true)
+			{
+				lcd.setCursor(9, 0);
+				lcd.print("       ");
+				lcd.setCursor(9, 0);
+				lcd.print("Normal");
+				lock = false;
+			}
 			
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			if (timer2Flag)
+			{
+				lcd.setCursor(7, 1);
+				lcd.print("       ");
+				lcd.setCursor(7, 1);
+				lcd.print(getBattVoltage(), 2);
+				lcd.print("V");
+				timer2Flag = false;
+			}
+			
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
 				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
+					i++;
+					//lock = true;
+					//tempMode = 1;
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						//lock = true;
-						//tempMode = 1;
-						if (i >= buttonHoldTime)
-						{
-							programMode = modeNormal;
-							tempMode = 10;
-							saveProgramModeToEEPROM();
-							break;
-						}
-						delay(100);
+						programMode = modeNormal;
+						tempMode = 10;
+						saveProgramModeToEEPROM();
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT1) == buttonReleased)
-				{
-					Buttlock = false;
-				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 			
 			case 1:
-				if (lock == true)
-				{
-					lcd.setCursor(9, 0);
-					lcd.print("       ");
-					lcd.setCursor(9, 0);
-					lcd.print("Average");
-					lock = false;
-				}
+			if (lock == true)
+			{
+				lcd.setCursor(9, 0);
+				lcd.print("       ");
+				lcd.setCursor(9, 0);
+				lcd.print("Average");
+				lock = false;
+			}
 			
-				if (timer2Flag)
-				{
-					lcd.setCursor(7, 1);
-					lcd.print("       ");
-					lcd.setCursor(7, 1);
-					lcd.print(getBattVoltage(), 2);
-					lcd.print("V");
-					timer2Flag = false;
-				}
+			if (timer2Flag)
+			{
+				lcd.setCursor(7, 1);
+				lcd.print("       ");
+				lcd.setCursor(7, 1);
+				lcd.print(getBattVoltage(), 2);
+				lcd.print("V");
+				timer2Flag = false;
+			}
 			
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
 				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
+					i++;
+					//tempMode = 2;
+					//lock = true;
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						//tempMode = 2;
-						//lock = true;
-						if (i >= buttonHoldTime)
-						{
-							programMode = modeAverage;
-							tempMode = 10;
-							saveProgramModeToEEPROM();
-							resetAverage();
-							break;
-						}
-						delay(100);
+						programMode = modeAverage;
+						tempMode = 10;
+						saveProgramModeToEEPROM();
+						resetAverage();
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT1) == buttonReleased)
-				{
-					Buttlock = false;
-				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 			
 			case 2:
-				if (lock == true)
-				{
-					lcd.setCursor(9, 0);
-					lcd.print("       ");
-					lcd.setCursor(9, 0);
-					lcd.print("RPS");
-					lock = false;
-				}
+			if (lock == true)
+			{
+				lcd.setCursor(9, 0);
+				lcd.print("       ");
+				lcd.setCursor(9, 0);
+				lcd.print("Field");
+				lock = false;
+			}
 			
-				if (timer2Flag)
-				{
-					lcd.setCursor(7, 1);
-					lcd.print("       ");
-					lcd.setCursor(7, 1);
-					lcd.print(getBattVoltage(), 2);
-					lcd.print("V");
-					timer2Flag = false;
-				}
+			if (timer2Flag)
+			{
+				lcd.setCursor(7, 1);
+				lcd.print("       ");
+				lcd.setCursor(7, 1);
+				lcd.print(getBattVoltage(), 2);
+				lcd.print("V");
+				timer2Flag = false;
+			}
 			
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
 				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
+					i++;
+					//tempMode = 2;
+					//lock = true;
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						//tempMode = 3;
-						//lock = true;
-						if (i >= buttonHoldTime)
-						{
-							programMode = modeRPS;
-							tempMode = 10;
-							saveProgramModeToEEPROM();
-							break;
-						}
-						delay(100);
+						programMode = modeFeild;
+						tempMode = 10;
+						saveProgramModeToEEPROM();
+						resetAverage();
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT1) == buttonReleased)
-				{
-					Buttlock = false;
-				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 			
 			case 3:
-				if (lock == true)
+			if (lock == true)
+			{
+				lcd.setCursor(9, 0);
+				lcd.print("       ");
+				lcd.setCursor(9, 0);
+				lcd.print("RPS");
+				lock = false;
+			}
+			
+			if (timer2Flag)
+			{
+				lcd.setCursor(7, 1);
+				lcd.print("       ");
+				lcd.setCursor(7, 1);
+				lcd.print(getBattVoltage(), 2);
+				lcd.print("V");
+				timer2Flag = false;
+			}
+			
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
 				{
-					lcd.setCursor(9, 0);
-					lcd.print("       ");
-					lcd.setCursor(9, 0);
-					lcd.print("Setup");
-					lock = false;
-				}
-							
-				if (timer2Flag)
-				{
-					lcd.setCursor(7, 1);
-					lcd.print("       ");
-					lcd.setCursor(7, 1);
-					lcd.print(getBattVoltage(), 2);
-					lcd.print("V");
-					timer2Flag = false;
-				}
-							
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
-				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
+					i++;
+					//tempMode = 3;
+					//lock = true;
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						//tempMode = 4;
-						//lock = true;
-						if (i >= buttonHoldTime)
-						{
-							programMode = modeSetup;
-							tempMode = 10;
-							break;
-						}
-						delay(100);
+						programMode = modeRPS;
+						tempMode = 10;
+						saveProgramModeToEEPROM();
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT1) == buttonReleased)
-				{
-					Buttlock = false;
-				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 			
 			case 4:
-				if (lock == true)
+			if (lock == true)
+			{
+				lcd.setCursor(9, 0);
+				lcd.print("       ");
+				lcd.setCursor(9, 0);
+				lcd.print("Setup");
+				lock = false;
+			}
+			
+			if (timer2Flag)
+			{
+				lcd.setCursor(7, 1);
+				lcd.print("       ");
+				lcd.setCursor(7, 1);
+				lcd.print(getBattVoltage(), 2);
+				lcd.print("V");
+				timer2Flag = false;
+			}
+			
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
 				{
-					lcd.setCursor(9, 0);
-					lcd.print("       ");
-					lcd.setCursor(9, 0);
-					lcd.print("ATune");
-					lock = false;
-				}
-							
-				if (timer2Flag)
-				{
-					lcd.setCursor(7, 1);
-					lcd.print("       ");
-					lcd.setCursor(7, 1);
-					lcd.print(getBattVoltage(), 2);
-					lcd.print("V");
-					timer2Flag = false;
-				}
-							
-				if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
-				{
-					int i = 0;
-					Buttlock = true;
-					while(getButton(BUTT1) == buttPressed)
+					i++;
+					//tempMode = 4;
+					//lock = true;
+					if (i >= buttonHoldTime)
 					{
-						i++;
-						//tempMode = 0;
-						//lock = true;
-						if (i >= buttonHoldTime)
-						{
-							programMode = modeAutotune;
-							tempMode = 10;
-							break;
-						}
-						delay(100);
+						programMode = modeSetup;
+						tempMode = 10;
+						break;
 					}
+					delay(100);
 				}
-				else if (getButton(BUTT1) == buttonReleased)
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
+			break;
+			
+			case 5:
+			if (lock == true)
+			{
+				lcd.setCursor(9, 0);
+				lcd.print("       ");
+				lcd.setCursor(9, 0);
+				lcd.print("ATune");
+				lock = false;
+			}
+			
+			if (timer2Flag)
+			{
+				lcd.setCursor(7, 1);
+				lcd.print("       ");
+				lcd.setCursor(7, 1);
+				lcd.print(getBattVoltage(), 2);
+				lcd.print("V");
+				timer2Flag = false;
+			}
+			
+			if ((getButton(BUTT1) == buttPressed) && (Buttlock == false))
+			{
+				int i = 0;
+				Buttlock = true;
+				while(getButton(BUTT1) == buttPressed)
 				{
-					Buttlock = false;
+					i++;
+					//tempMode = 0;
+					//lock = true;
+					if (i >= buttonHoldTime)
+					{
+						programMode = modeAutotune;
+						tempMode = 10;
+						break;
+					}
+					delay(100);
 				}
+			}
+			else if (getButton(BUTT1) == buttonReleased)
+			{
+				Buttlock = false;
+			}
 			break;
 		}
 	}
@@ -1883,6 +2501,33 @@ void programModeSelect()
 //=======================================================================================
 
 //
+void initalStartSetup()
+{
+	loadSettingsFromEEPROM();
+
+	setupPCINT(1);
+	setupEXTINT(1);
+	setupTimer2(1);
+	
+	if (programMode == modeRPS)
+	{
+		setupCronoTimer(2);
+	}
+	else
+	{
+		setupCronoTimer(1);
+	}
+
+	
+	lcd.clear();
+	updateDisplay(programMode, true);
+	
+	resetAverage();
+	shotInProgress = false;
+}
+
+
+//
 void hardError(int errorCode)
 {
 	lcd.clear();
@@ -1891,7 +2536,7 @@ void hardError(int errorCode)
 	if (errorCode == errorCode_EmptyBatt)
 	{
 		lcd.print("BATT EMPTY");
-	} 
+	}
 	else
 	{
 		lcd.print("CODE:");
@@ -1928,11 +2573,20 @@ float convertToFPS(float data)
 void calculateAverage()
 {
 	unsigned long tempint = 0;
+	unsigned long tempintsq = 0;
+	float tempMean = 0;
+	float tempMeanSq = 0;
 	
 	for (int i = 0 ; i < AverageNumOfShots ; i++)
 	{
-		tempint += shotCountArray[i];
+		tempint += shotTimeArray[i];
+		shotFpsArray[i] = cronoDistance / ((float)tempint * 0.0000005);
+		tempMean = shotFpsArray[i];
+		tempMeanSq = (shotFpsArray[i] * shotFpsArray[i]);
 	}
+	
+	tempMean = tempMean / (float)AverageNumOfShots;
+	statStandardDev = (tempMeanSq - ((tempMean * tempMean) / AverageNumOfShots)) / ((float)AverageNumOfShots - 1.0);
 	
 	tempint = (float)tempint / (float)AverageNumOfShots;
 	
@@ -1959,91 +2613,101 @@ void updateDisplay(int mode, boolean data)
 	switch(mode)
 	{
 		case modeNormal:
-			if (data)
+		if (data)
+		{
+			if (metric)
 			{
-				if (metric)
-				{
-					lcd.print("MPS:");
-					lcd.print(mpsLastShot, 1);
-				} 
-				else
-				{
-					lcd.print("FPS:");
-					lcd.print(convertToFPS(mpsLastShot), 1);
-				}
-				lcd.setCursor(0, 1);
-				lcd.print("E:");
-				float energy = 0.5 * ((float)BBWeight / 1000.0) * ((float)mpsLastShot * (float)mpsLastShot);
-				lcd.print(energy, 2);
-				lcd.setCursor(11, 1);
-				lcd.print(BBWeight, 2);
-				lcd.print("g");
+				lcd.print("MPS:");
+				lcd.print(mpsLastShot, 1);
 			}
 			else
 			{
 				lcd.print("FPS:");
-				lcd.print("FAIL");
-				lcd.setCursor(0, 1);
-				lcd.print("AVG:");
-				lcd.print(timerCount);
+				lcd.print(convertToFPS(mpsLastShot), 1);
 			}
+			lcd.setCursor(0, 1);
+			lcd.print("E:");
+			float energy = 0.5 * ((float)BBWeight / 1000.0) * ((float)mpsLastShot * (float)mpsLastShot);
+			lcd.print(energy, 2);
+			lcd.setCursor(11, 1);
+			lcd.print(BBWeight, 2);
+			lcd.print("g");
+		}
+		else
+		{
+			lcd.print("FPS:");
+			lcd.print("FAIL");
+			lcd.setCursor(0, 1);
+			lcd.print("AVG:");
+			lcd.print(timerCount);
+		}
 		break;
 		
 		case modeAverage:
-			if (data)
+		if (data)
+		{
+			if (metric)
 			{
-				if (metric)
-				{
-					lcd.print("MPS:");
-					lcd.print(mpsLastShot, 1);
-				}
-				else
-				{
-					lcd.print("FPS:");
-					lcd.print(convertToFPS(mpsLastShot), 1);
-				}
-				
-				if (error == errorCode_LowBatt)
-				{
-					lcd.setCursor(10, 0);
-					lcd.print(shotCount);
-				}
-				else
-				{
-					lcd.setCursor(10, 0);
-					lcd.print("SC:");
-					lcd.print(shotCount);
-				}
-				
-				lcd.setCursor(0, 1);
-				lcd.print("E:");
-				float energy = 0.5 * ((float)BBWeight / 1000.0) * ((float)mpsLastShot * (float)mpsLastShot);
-				lcd.print(energy, 2);
-				lcd.setCursor(11, 1);
-				lcd.print(BBWeight, 2);
-				lcd.print("g");
+				lcd.print("MPS:");
+				lcd.print(mpsLastShot, 1);
 			}
 			else
 			{
-				if (metric)
-				{
-					lcd.print("MPS:");
-					lcd.print(mpsAverage, 1);
-				}
-				else
-				{
-					lcd.print("FPS:");
-					lcd.print(convertToFPS(mpsAverage), 1);
-				}
+				lcd.print("FPS:");
+				lcd.print(convertToFPS(mpsLastShot), 1);
+			}
+			
+			if (error == errorCode_LowBatt)
+			{
 				lcd.setCursor(10, 0);
-				lcd.print("E:");
-				float energy = 0.5 * ((float)BBWeight / 1000.0) * ((float)mpsAverage * (float)mpsAverage);
-				lcd.print(energy, 2);
-				lcd.setCursor(0, 1);
+				lcd.print(shotCount);
+			}
+			else
+			{
+				lcd.setCursor(10, 0);
+				lcd.print("SC:");
+				lcd.print(shotCount);
+			}
+			
+			lcd.setCursor(0, 1);
+			lcd.print("E:");
+			float energy = 0.5 * ((float)BBWeight / 1000.0) * ((float)mpsLastShot * (float)mpsLastShot);
+			lcd.print(energy, 2);
+			lcd.setCursor(11, 1);
+			lcd.print(BBWeight, 2);
+			lcd.print("g");
+		}
+		else
+		{
+			if (metric)
+			{
+				lcd.print("MPS:");
+				lcd.print(mpsAverage, 1);
+			}
+			else
+			{
+				lcd.print("FPS:");
+				lcd.print(convertToFPS(mpsAverage), 1);
+			}
+			lcd.setCursor(10, 0);
+			lcd.print("E:");
+			float energy = 0.5 * ((float)BBWeight / 1000.0) * ((float)mpsAverage * (float)mpsAverage);
+			lcd.print(energy, 2);
+			lcd.setCursor(0, 1);
+			if (shotCountSelect == AverageNumOfShots)
+			{
 				lcd.print("SC:");
 				lcd.print(shotCountSelect);
 				lcd.setCursor(7, 1);
-				float tempFloat = cronoDistance / ((float)shotCountArray[shotCountSelect] * 0.0000005);
+				lcd.print("SD:");
+				lcd.print(statStandardDev, 2);
+			}
+			else
+			{
+				lcd.print("SC:");
+				lcd.print(shotCountSelect + 1);
+				lcd.setCursor(7, 1);
+				float tempFloat = cronoDistance / ((float)shotTimeArray[shotCountSelect] * 0.0000005);
 				if (metric)
 				{
 					lcd.print("MPS:");
@@ -2055,16 +2719,87 @@ void updateDisplay(int mode, boolean data)
 					lcd.print(convertToFPS(tempFloat), 1);
 				}
 			}
+		}
 		break;
 		
 		case modeRPS:
-			//
+		//
+		break;
+		
+		case modeFeild:
+		if (data)
+		{
+			if (metric)
+			{
+				lcd.print("MPS:");
+				lcd.print(mpsLastShot, 1);
+			}
+			else
+			{
+				lcd.print("FPS:");
+				lcd.print(convertToFPS(mpsLastShot), 1);
+			}
+			
+			if (error == errorCode_LowBatt)
+			{
+				lcd.setCursor(10, 0);
+				lcd.print(shotCount);
+			}
+			else
+			{
+				lcd.setCursor(10, 0);
+				lcd.print("SC:");
+				lcd.print(shotCount);
+			}
+			
+			lcd.setCursor(0, 1);
+			lcd.print("E:");
+			float energy = 0.5 * ((float)BBWeight / 1000.0) * ((float)mpsLastShot * (float)mpsLastShot);
+			lcd.print(energy, 2);
+			lcd.setCursor(11, 1);
+			lcd.print(BBWeight, 2);
+			lcd.print("g");
+		}
+		else
+		{
+			if (metric)
+			{
+				lcd.print("MPS:");
+				lcd.print(mpsAverage, 1);
+			}
+			else
+			{
+				lcd.print("FPS:");
+				lcd.print(convertToFPS(mpsAverage), 1);
+			}
+			lcd.setCursor(10, 0);
+			lcd.print("E:");
+			float energy = 0.5 * ((float)BBWeight / 1000.0) * ((float)mpsAverage * (float)mpsAverage);
+			lcd.print(energy, 2);
+			lcd.setCursor(0, 1);
+			if (energy <= feildLimCQB)
+			{
+				lcd.print("------CQB-------");
+			}
+			else if ((energy > feildLimCQB) && (energy <= feildLimFeild))
+			{
+				lcd.print("-----Field------");
+			}
+			else if ((energy > feildLimFeild) && (energy <= feildLimSniper))
+			{
+				lcd.print("-----Sniper-----");
+			}
+			else
+			{
+				lcd.print("--OVER LIMITS--");
+			}
+		}
 		break;
 		
 		case modeAutotune:
-			lcd.print("Auto Tuning All");
-			lcd.setCursor(0, 1);
-			lcd.print("Channels");
+		lcd.print("Auto Tuning All");
+		lcd.setCursor(0, 1);
+		lcd.print("Channels");
 		break;
 	}
 	
@@ -2089,6 +2824,9 @@ void updateDisplay(int mode, boolean data)
 //int BeamDSet = BeamGlobalSetDefault;
 //boolean metric = true;
 //uint8_t AverageNumOfShots = 5;
+//float feildLimCQB = 1.14;
+//float feildLimFeild = 1.64;
+//float feildLimSniper = 3.34;
 
 //
 void saveSettingsToEEPROM()
@@ -2105,6 +2843,9 @@ void saveSettingsToEEPROM()
 	EEPROM.writeWord(20, BeamDSet);
 	EEPROM.write(22, metric);
 	EEPROM.writeByte(23, AverageNumOfShots);
+	EEPROM.writeFloat(24, feildLimCQB);
+	EEPROM.writeFloat(28, feildLimFeild);
+	EEPROM.writeFloat(32, feildLimSniper);
 }
 
 
@@ -2123,6 +2864,9 @@ void loadSettingsFromEEPROM()
 	BeamDSet = EEPROM.readWord(20);
 	metric = EEPROM.read(22);
 	AverageNumOfShots = EEPROM.read(23);
+	feildLimCQB = EEPROM.readFloat(24);
+	feildLimFeild = EEPROM.readFloat(28);
+	feildLimSniper = EEPROM.readFloat(32);
 }
 
 void saveBBWeightToEEPROM()
@@ -2150,6 +2894,9 @@ void printSettings()
 	Serial.println(BeamDSet);
 	Serial.println(metric);
 	Serial.println(AverageNumOfShots);
+	Serial.println(feildLimCQB);
+	Serial.println(feildLimFeild);
+	Serial.println(feildLimSniper);
 	Serial.println("===");
 }
 
@@ -2185,7 +2932,7 @@ int checkBattLimits()
 	if ((tempint <= lowVoltage) && (tempint > emptyVoltage))
 	{
 		return errorCode_LowBatt;
-	} 
+	}
 	else if (tempint <= emptyVoltage)
 	{
 		return errorCode_EmptyBatt;
@@ -2474,7 +3221,7 @@ void setupPCINT(int data)
 	PCICR = 0x04;
 }
 
-ISR(PCINT2_vect)//Beam 2 
+ISR(PCINT2_vect)//Beam 2
 {
 	tempTimerCount = TCNT1;
 	TIMSK1 = 0x00;
@@ -2488,8 +3235,8 @@ ISR(PCINT2_vect)//Beam 2
 	}
 	//else//Beam 1 did not trigg //IGNORE BEAM 1 FAILS
 	//{
-		//shotSuccess = false;
-		//shotFlag = true;
+	//shotSuccess = false;
+	//shotFlag = true;
 	//}
 }
 
@@ -2537,21 +3284,40 @@ ISR(INT0_vect)//Beam 1
 //========================================TIMER 1========================================
 //=======================================================================================
 
-void setupCronoTimer(boolean i)
+// 0     - Disable Timer
+// 1     - Crono Timer setup
+// other - RPS crono setup
+void setupCronoTimer(int i)
 {
-	if (i == false)
+	if (i == 0)
 	{
 		TCCR1A = 0x00;
 		TCCR2A = 0x00;
 		return;
 	}
 	
-	TCCR1A = 0x00;
-	TCCR1B = 0x02; //clk/8
+	if (i == 1)
+	{
+		TCCR1A = 0x00;
+		TCCR1B = 0x02; //clk/8
+	}
+	else
+	{
+		TCCR1A = 0x00;
+		TCCR1B = 0x03; //clk/64
+	}
+	
 	TCNT1 = 0;
 	OCR1A = 400;
 	TIMSK1 = 0x00;
 }
+
+//
+volatile void resetTimer1Count()
+{
+	TCNT1 = 0;
+}
+
 
 //
 ISR(TIMER1_COMPA_vect)

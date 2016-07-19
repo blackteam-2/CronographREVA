@@ -20,10 +20,12 @@ extern "C" void __cxa_pure_virtual() {;}
 //
 void programModeNormal();
 void programModeAverage();
+void programModeFeild();
 void programModeRPS();
 void programModeAutotune();
 void programModeSetup();
 void programModeSelect();
+void initalStartSetup();
 void hardError(int errorCode);
 void resetAverage();
 float convertToFPS(float data);
@@ -48,7 +50,8 @@ int autotuneC(float target, int delta);
 int autotuneD(float target, int delta);
 void setupPCINT(int data);
 void setupEXTINT(int data);
-void setupCronoTimer(boolean i);
+void setupCronoTimer(int i);
+volatile void resetTimer1Count();
 void setupTimer2(int data);
 
 #include "E:\Dropbox\Projects\arduino-1.0.5\hardware\arduino\variants\standard\pins_arduino.h" 
